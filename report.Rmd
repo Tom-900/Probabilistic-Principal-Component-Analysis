@@ -168,7 +168,7 @@ The result shows that the parameters obtained from the two methods are actually 
 In this experiment, first we use the 18-dimensional Tobamovirus data to run both PCA and PPCA model. 
 
 ```{r}
-tobamovirus = read.csv('D:/statistics/CUHK_PPCA/data/tobamovirus.csv')
+tobamovirus = read.csv('/data/tobamovirus.csv')
 data = t(as.matrix(tobamovirus))
 
 pca_data = t(PCA(data, 2))
