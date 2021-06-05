@@ -653,7 +653,7 @@ of the prediction error for various Gaussian model of the Tobamovirus data')
 ```
 
 
-## Some problems
+# Some problems
 
 In PPCA model, if we use EM algorithm, the result is very sensitive to the initial value of parameters. $\mathbf{W}$ must be choosen in a small range at first to make the log-likelihood converge to the overall maximum.
 
@@ -662,7 +662,7 @@ In example 1, the projection of Tobamovirus data, although also appears as three
 In example 3, the model with smallest prediction error is PPCA and $q=3$ instead of $q=2$. There are also some differences in other computational results of prediction error compared to the original paper.
 
 
-## References
+# References
 
 [1] M. E. Tipping and C. M. Bishop, "Probabilistic Principal Component Analysis", in Journal of the Royal Statistical Society, Series B (Statistical Methodology), Vol. 61, No. 3(1999) , pp. 611-622, doi:10.1111/1467-9868.00196.
 
