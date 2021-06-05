@@ -1,2 +1,2 @@
 # PPCA
-This is a programme for realizing PPCA(Probabilistic principal component analysis).
+This is a programme for realizing PPCA (Probabilistic Principal Component Analysis).
