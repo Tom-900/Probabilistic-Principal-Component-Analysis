@@ -1,0 +1,687 @@
+---
+title: 'Reproduction of the results in the paper: Probabilistic principal component
+  analysis'
+author: "Muyang Ge"
+date: "2021/1/27"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+
+## PCA
+
+First, let's construct the function to realize the classical PCA algorithm. In this place, $\mathbf{t}$ is the $d$-dimensional data matrix with a shape $d\times N$. $q$ is the dimension of the latent subspace and $\mathbf{W}$ is the set of $q$ principal axes. $\mathbf{W}$ is composed of $q$ eigenvectors corresponding to the maximal $q$ eigenvalues of the sample covariance matrix $\mathbf{S}$.
+
+```{r}
+PCA = function(t, q){
+  
+  d = dim(t)[1]
+  N = dim(t)[2]
+  
+  ## sample mean
+  Mu = rowSums(t) / N
+  ## sample covariance
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + ((t[, i] - Mu) %*% t(t[, i] - Mu))}
+  S = S / N
+  
+  ev = eigen(S)
+  W = ev$vectors[, c(1 : q)]
+  X = t(W) %*% (t - Mu)
+  
+  return(X)
+}
+```
+
+
+## PPCA
+
+In this part, the notation mainly refers to the paper of Tipping and Bishop[1]. The authors provided two methods to determine the parameters: maximum likelihood estimate and EM algorithm.
+
+In the former one, $\mathbf{W}$ and $\sigma^2$ are calculated as:
+\begin{equation}
+\sigma^2=\sum\limits_{i=q+1}^{n}\lambda_i
+\end{equation}
+\begin{equation}
+\mathbf{W}=\mathbf{U_q}(\mathbf{\Lambda}_q-\sigma^2\mathbf{I})^{1/2}\mathbf{R}
+\end{equation}
+
+where the $q$ column vectors in the $d\times q$ matrix $\mathbf{U}_q$ are the principal eigenvectors of $\mathbf{S}$, with corresponding eigenvalues $\lambda_1,\cdots,\lambda_q$ in the $q\times q$ diagonal matrix $\mathbf{\Lambda}_q$, and $\mathbf{R}$ is an arbitrary $q\times q$ orthogonal rotation matrix.
+
+In EM algorithm, $\mathbf{W}$ and $\sigma^2$ are updated by:
+\begin{equation}
+\widetilde{\mathbf{W}}=\mathbf{SW}(\sigma^2\mathbf{I}+\mathbf{M}^{-1}\mathbf{W}^{\rm{T}}\mathbf{S}\mathbf{W})^{-1}
+\end{equation}
+\begin{equation}
+\widetilde{\sigma^{2}}=\frac{1}{d}\rm{tr}(\mathbf{S}-\mathbf{SWM}^{-1}\widetilde{\mathbf{W}^{\rm{T}}})
+\end{equation}
+
+where $\mathbf{S}$ is given by:
+\begin{equation}
+\mathbf{S}=\frac{1}{N}\sum\limits_{n=1}^{N}(\mathbf{t}_n-\pmb{\mu})(\mathbf{t}_n-\pmb{\mu})^{\rm{T}}
+\end{equation}
+
+The first instance of $\mathbf{W}$ in equation is the old value of the parameter matrix, whereas the second instance $\widetilde{\mathbf{W}}$ is the new value of calculated from the equation.
+
+After we get the parameter $\mathbf{W}$ and $\sigma^2$, the desired latent variable $\mathbf{x}$ can be summarized by the mean of the posterior distribution:
+
+\begin{equation}
+\mathbf{x}_n=\mathbf{M}^{-1}\mathbf{W}^{\rm{T}}(\mathbf{t}_n-\pmb{\mu})
+\end{equation}
+\begin{equation}
+\mathbf{M}=\mathbf{W}^{\rm{T}}\mathbf{W}+\sigma^{2}\mathbf{I}
+\end{equation}
+
+```{r}
+PPCA = function(t, q, epsilon=0.001, method = 'ML'){
+  ## input data:t
+  t = as.matrix(t)
+  
+  ## t has the shape of d*N 
+  d = dim(t)[1]
+  N = dim(t)[2]
+  
+  ## Mu is the average of each rows
+  Mu = rowSums(t) / N
+  
+  ## compute the sample variance S
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + (t[, i] - Mu) %*% t(t[, i] - Mu)}
+  S = S / N
+  
+  ## 1.use the result of the maximum likelihood directly
+  if (method == 'ML'){
+ 
+  ## calculate the eigenvalue and eigenvector of S
+  ev = eigen(S)
+  
+  ## calculate sigma square
+  if (q + 1 == d){sigma = sum(ev$values[d]) / (d - q)}
+  if (q + 1 < d){sigma = sum(ev$values[(q + 1) : d]) / (d - q)}
+  
+  ## calculate W
+  U = ev$vectors[, 1 : q]
+  if (q == 1){lambda = ev$values[1]}
+  if (q > 1){lambda = diag(ev$values[1 : q])}
+  W = U %*% sqrt(lambda - sigma * diag(q))
+  
+  ## calculate the desired data X
+  M = t(W) %*% W + sigma * diag(q)
+  X = solve(M) %*% t(W) %*% (t-Mu)
+  }
+
+  ## 2.use EM algorithm
+  if (method == 'EM'){
+  
+  ## generate inital W and sigma_square 
+   ev = eigen(S)
+   U = ev$vectors[, 1 : q]
+   if (q == 1){lambda = ev$values[1]}
+   if (q > 1){lambda = diag(ev$values[1 : q])}
+   
+   W_old = U %*% sqrt(lambda)
+   W_new = U %*% sqrt(lambda)
+   sigma_old = 2
+   sigma_new = 5
+  
+  ## EM algorithm
+  while (sqrt(sum((W_old - W_new) ^ 2)) > epsilon || abs(sigma_new - sigma_old) > epsilon){
+    M = t(W_new) %*% W_new + sigma_new * diag(q)
+    W_old = W_new
+    sigma_old = sigma_new
+    W_new = S %*% W_old %*% solve(sigma_old * diag(q) + solve(M) %*% t(W_old) %*% S %*% W_old)
+    sigma_new = sum(diag(S - S %*% W_old %*% solve(M) %*% t(W_new)))/d
+
+  }
+  
+  ## calculate the desired data X
+  M = t(W_new) %*% W_new + sigma_new * diag(q)
+  X = solve(M) %*% t(W_new) %*% (t - Mu)
+  }
+  
+  return(X)
+}
+```
+
+It must be emphasized that EM algorithm is very sensitive to the choice of the initial value. So in the code above the initial value of $\mathbf{W}$ is chosen to be: $\mathbf{U}_q\mathbf{\Lambda}_q^{1/2}$. This ensures $\mathbf{W}$ converge to the correct value. It could be proved in the next example.
+
+
+## Example 0: Randomly generated data
+
+This example utilizes randomly generated data to verify the consistency of two ways to get the parameters of the model.
+
+```{r}
+a = matrix(rnorm(120), nrow = 6, ncol = 20)
+b = PPCA(a, q = 3)
+c = PPCA(a, q = 3, epsilon = 0.001, method = 'EM')
+print(sqrt(sum((b-c)^2))/(dim(a)[1]*dim(a)[2]))
+```
+
+The result shows that the parameters obtained from the two methods are actually the same.
+
+
+## Example 1: Missing data
+
+In this experiment, first we use the 18-dimensional Tobamovirus data to run both PCA and PPCA model. 
+
+```{r}
+tobamovirus = read.csv('D:/statistics/CUHK_PPCA/data/tobamovirus.csv')
+data = t(as.matrix(tobamovirus))
+
+pca_data = t(PCA(data, 2))
+plot(pca_data, col = 'white', main = 'PCA')
+text(pca_data[, 1], pca_data[, 2], labels = c(1:38), cex = 0.75)
+
+ppca_data = t(PPCA(data, 2, 0.001, 'EM'))
+plot(ppca_data, col = 'white', main = 'PPCA')
+text(ppca_data[, 1], ppca_data[, 2], labels = c(1:38), cex = 0.75)
+```
+
+It can be seen from the plot that the two model return to almost the same result. The projection presents three subgroupings. 
+
+Next, we should simulated missing data by randomly removing each value in the dataset with probability $20\%$. Obviously, the code above cannot be used again. The following modifications to EM-algorithm is provided by Alexander and Raiko[2].
+
+The E-step:
+\begin{equation}
+\overline{\mathbf{x}}_j=\mathbf{\Psi}_j^{-1}\mathbf{W}_j^{\rm{T}}(\mathbf{Y}_{:j}-\mathbf{M}_j)
+\end{equation}
+\begin{equation}
+\mathbf{\Sigma}_j=v\mathbf{\Psi}_j^{-1}
+\end{equation}
+\begin{equation}
+\mathbf{\Psi}_j=\mathbf{W}_j^{\rm{T}}\mathbf{W}_j+v\mathbf{I} , j=1,\cdots,n
+\end{equation}
+
+The M-step:
+\begin{equation}
+m_i=\frac{1}{|O_i|}\sum\limits_{j\in O_i}[y_{ij}-\mathbf{w}_i^{\rm{T}}\mathbf{\overline{x}}_j]
+\end{equation}
+\begin{equation}
+\mathbf{w}_i^{\rm{T}}=(\mathbf{Y}_{:j}-m_i)^{\rm{T}}\mathbf{\overline{X}}_i^{\rm{T}}(\mathbf{\overline{X}}_i\mathbf{\overline{X}}_i^{\rm{T}}+\sum\limits_{j\in O_i}\mathbf{\Sigma_j})^{-1} , i=1,\cdots,d\\
+\end{equation}
+\begin{equation}
+v=\frac{1}{N}\sum\limits_{ij\in O}(y_{ij}-\mathbf{w}_i^{\rm{T}}\mathbf{\overline{x}}_j-m_i)^2+\frac{1}{N}\sum\limits_{ij\in O}\mathbf{w}_i^{\rm{T}}\mathbf{\Sigma}_j\mathbf{w}_i^{\rm{T}}
+\end{equation}
+
+In this place:
+
+$\mathbf{Y}$ is the data matrix with zeros in the places of missing value.  
+
+$O$ is the set of indices $ij$ corresponding to observed values $y_{ij}$, $O_i$ is the set of indices $j$(similarly $O_j$ is the set of indices $i$) for which $y_{ij}$ is observed. $|O_i|$ is the number of elements in $O_i$ and $N=|O|$ is the number of observed data point.
+
+$\mathbf{\overline{X}}$ is the matrix of latent variable, $\mathbf{\overline{x}}_j$ is the $j$-th column of $\mathbf{\overline{X}}$, and $\overline{\mathbf{X}}_i$ is matrix $\overline{\mathbf{X}}$ in which a $j$-th column is replaced with zeros if $y_{ij}=0$. 
+
+$\mathbf{W}_j$ is matrix $\mathbf{W}$ in which an $i$-th row is replaced with zeros if $y_{ij}$ is $0$. The $i$-th row of $\mathbf{W}$ is denoted by $\mathbf{w}_i$. 
+
+$\mathbf{m}$ is the conditional mean of the data and vector $\mathbf{M}_j$ is formed from $\mathbf{m}$ similarly to $\mathbf{W}_j$.
+
+$v$ is equivalent to $\sigma^2$.
+
+And the latent variable we need is exactly $\mathbf{\overline{X}}$.
+
+```{r}
+## EM algorithm for missing data
+options (warn = -1)
+library('limSolve')
+
+PPCA_missing = function(missing_data, q){
+ 
+  ## record the location of the missing data and fill NA with 0
+  O = matrix(1, dim(missing_data)[1], dim(missing_data)[2])
+  O[is.na(missing_data)] = 0
+  Y = missing_data
+  Y[is.na(missing_data)] = 0
+
+  ## initialization: here we impute the missing value with the median of each row, and 
+  ## calculate W and sigma from this data matrix(data_median)
+  d = dim(missing_data)[1]
+  N = dim(missing_data)[2]
+  data_median = missing_data
+  for(i in 1:d){data_median[i,][is.na(data_median[i,])] = 
+                median(missing_data[i,], na.rm = T)}
+  
+  m = rowMeans(data_median)
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + (data_median[, i] - m) %*% t(data_median[, i] - m)}
+  S = S / N
+  
+  ev = eigen(S)
+  if (q + 1 == d){v = sum(ev$values[d]) / (d - q)}
+  if (q + 1 < d){v = sum(ev$values[(q + 1) : d]) / (d - q)}
+  
+  U = ev$vectors[, 1 : q]
+  if (q == 1){lambda = ev$values[1]}
+  if (q > 1){lambda = diag(ev$values[1 : q])}
+  W = U %*% sqrt(lambda - diag(v, q))
+  
+  X = matrix(0, q, N)
+  record = 1
+  epsilon = 0.001
+  
+  ## update parameters using EM algorithm
+  while(abs(record-v) >= epsilon){
+    
+    record = v
+    print('The value of the updated v:')
+    print(v)
+   ## E step:
+    for(j in 1 : N){
+      W_j = W
+      M_j = m
+      
+      for(i in 1 : d){
+        if(O[i, j] == 0){
+          W_j[i, ] = 0
+          M_j[i] = 0 
+          }
+        }
+      
+      Psi = t(W_j) %*% W_j + diag(v, q, q)
+      X[, j] = Solve(Psi) %*% t(W_j) %*% (Y[, j] - M_j)
+      assign(paste('Sigma', j, sep = ''), v * Solve(Psi))
+    }
+   
+    ## M step:
+    for(i in 1 : d){
+      X_i = X
+      for(j in 1 : N){if(O[i, j] == 0){X_i[, j]=0}}
+      
+      ## update m
+      m[i] = 0
+      for(j in 1 : N){
+        if(O[i, j] == 1){m[i] = m[i] + Y[i, j] - W[i, ] %*% X[, j]}
+      }
+      m[i] = m[i]/sum(O[i, ])
+      
+      ## update W
+      W[i, ] = 0
+      C = matrix(0, q, q)
+      for(j in 1 : N){
+        if(O[i, j] == 1){C = C + get(paste('Sigma', j, sep = ''))}
+      }
+      W[i, ] = t(Y[i, ] - m[i]) %*% t(X_i) %*% Solve(X_i %*% t(X_i) + C)
+    }
+
+    ## update v    
+    v = 0
+    for (i in 1 : d){
+      for (j in 1 : N){
+        if (O[i, j] == 1){
+          v = v + ((Y[i, j] - t(W[i, ]) %*% X[, j] - m[i])^2 + t(W[i, ]) %*% 
+              get(paste('Sigma', j, sep = '')) %*% W[i, ]) / N
+        }
+      }
+    }
+    v = as.numeric(v)
+  }
+  
+  return(X)
+}
+
+
+```
+
+Generate simulated data and conduct the algorithm. We use the value of $v$ to judge if the updating process has been over. 
+
+```{r}
+## generate missing data
+set.seed(90)
+random_matrix = matrix(runif(18 * 38), nrow = 18, ncol = 38)
+random_matrix[which(random_matrix > 0.2)] = 1
+random_matrix[which(random_matrix <= 0.2)] = NA
+missing_data = random_matrix * data
+
+## experiment
+data_imputed = t(PPCA_missing(missing_data = missing_data, 2))
+plot(data_imputed, col='white', main = 'PPCA for missing data')
+text(data_imputed[, 1], data_imputed[, 2], c(1:38), cex = 0.75)
+
+```
+
+From the plot, the projection remains to be three clusters. This indicates that PPCA maintains good performance even if there are missing values in the dataset.
+
+
+## Example 2: Mixture of probabilistic principal component analysis models
+
+Tipping and Bishop raised another model based on PPCA in their paper: Mixture of Probabilistic Principal Component Analysers[3]. The association of a probability model with PCA offers the tempting prospect of being able to model complex data structures with a combination of local PCA models.
+
+In PPCA, the probabilistic function of each example is as follows:
+\begin{equation}
+p(\mathbf{t})=(2\pi)^{-d/2}|\mathbf{C}|^{-1/2}\exp\{-\frac{1}{2}(\mathbf{t}-\pmb{\mu})^{\rm{T}}\mathbf{C}^{-1}(\mathbf{t}-\pmb{\mu})\}
+\end{equation}
+\begin{equation}
+\mathbf{C}=\sigma^{2}\mathbf{I}+\mathbf{WW}^{\rm{T}}
+\end{equation}
+
+In mixture model, however, the log-likelihood of observing the data set for such a mixture model is:
+\begin{equation}
+\mathcal{L}=\sum\limits_{n=1}^{N}\ln\{p(\mathbf{t}_n)\}
+\end{equation}
+\begin{equation}
+=\sum\limits_{n=1}^{N}\ln\{\sum\limits_{i=1}^{M}\pi_ip(\mathbf{t}_n|i)\}
+\end{equation}
+
+where $p(\mathbf{t}|i)$ is a single PPCA model and $\pi_i$ is the corresponding mixing proportion, with $\pi_i\ge0$ and $\sum\pi_i=1$. Each single model has its parameters: $\pmb{\mu}_i$, $\mathbf{W}_i$ and $\sigma_i^{2}$.
+
+We can develop an iterative EM algorithm for optimization of model parameters. If $R_{ni}=p(i|\mathbf{t}_n)$ is the posterior responsibiility of mixture $i$ for generating data point $\mathbf{t}_n$, given by:
+\begin{equation}
+R_{ni}=\frac{p(\mathbf{t}_n|i)\pi_i}{p(\mathbf{t}_n)}
+\end{equation}
+
+Then we obtain the following parameter updates:
+\begin{equation}
+\widetilde{\pi_i}=\frac{1}{N}\sum\limits_{n=1}^{N}R_{ni}
+\end{equation}
+\begin{equation}
+\widetilde{\mu_i}=\frac{\sum\limits_{n=1}^{N}R_{ni}\mathbf{t}_n}{\sum\limits_{n=1}^{N}R_{ni}}
+\end{equation}
+
+where $\mathbf{S}_i$ is the local responsibility-weighted covariance matrix:
+\begin{equation}
+\mathbf{S}_i=\frac{1}{\widetilde{\pi_i}N}\sum\limits_{n=1}^{N}R_{ni}(\mathbf{t}_n-\widetilde{\pmb{\mu}_i})(\mathbf{t}_n-\widetilde{\pmb{\mu}_i})^{\rm{T}}
+\end{equation}
+
+Furthermore, for a given data point $\mathbf{t}$, there is now a posterior distribution associated with each latent space, the mean of which for space $i$ is given by $(\sigma^2_i\mathbf{I}+\mathbf{W}_i^{\rm{T}}\mathbf{W}_i)^{-1}\mathbf{W}_i^{\rm{T}}(\mathbf{t}_i-\pmb{\mu})$.
+
+```{r}
+options (warn = -1)
+
+t = data
+
+d = dim(data)[1]
+N = dim(data)[2]
+q = 2
+K = 3
+epsilon = 0.001
+
+repeat{
+  
+  try({
+    ## initialization
+    Pi = array(0, K)
+    record = array(1, K)
+    Mu = matrix(0, d, K)
+    sigma = array(0, K)
+    P = matrix(0, N, K)
+
+    R = matrix(runif(N*K), N, K)
+    sum = rowSums(R)
+    R = R/sum
+
+    while(sqrt(sum((record - Pi)^2)) >= epsilon){
+        
+      for (k in 1 : K){
+      ## record the last Pi
+      record[k] = Pi[k]
+        
+      ## update Pi, Mu
+      Pi[k] = sum(R[, k])/ N
+      Mu[, k] = (t %*% R[, k])/sum(R[, k])
+    
+      ## update S
+      S = matrix(0, d, d)
+      for (n in 1 : N){S =  S + R[n, k] * (t[, n] - Mu[, k]) %*% t(t[, n] - Mu[, k])}
+      S =  S/(Pi[k] * N)
+
+      ## compute new value of U and lambda according to the eigenvalue and eigenvector of S
+      ## update sigma
+      ev = eigen(S)
+      if (q + 1 == d){sigma[k] = sum(ev$values[d]) / (d - q)}
+      if (q + 1 < d){sigma[k] = sum(ev$values[(q + 1) : d]) / (d - q)}
+      U = ev$vectors[, 1 : q]
+    
+      if (q == 1){lambda = ev$values[1]}
+      if (q > 1){lambda = ev$values[1 : q]}
+
+      ## update W        
+      assign(paste('W', k, sep = ''), U %*% sqrt(lambda - sigma[k] * diag(q)))
+
+      ## compute C by sigma and W
+      assign(paste('C', k, sep=''), sigma[k]*diag(d) + get(paste('W', k, sep='')) %*% 
+      t(get(paste('W', k, sep=''))))
+
+      ## compute the conditional probability of t to k    
+      for (n in 1 : N){P[n, k] = (sqrt(det(get(paste('C', k, sep=''))))^(-1))*exp(-(t(t[, n]-
+      Mu[, k])%*%Solve(get(paste('C', k, sep='')))%*%(t[, n]-Mu[, k]))/2)}
+    }
+
+    ## update R[n, k] 
+    for (n in 1 : N){
+      for (k in 1 : K){
+        R[n, k] = P[n, k]*Pi[k]/(P[n, ]%*%Pi)
+      }
+    }
+  }
+}, silent = T)
+  
+  ## choose the right answer
+  if((is.nan(Pi[1])==F)&&(is.nan(Pi[2])==F)&&(is.nan(Pi[2])==F)){
+    if((Pi[1] >= 0.1)&&(Pi[2] >= 0.1)&&(Pi[3] >= 0.1)){break}
+  }
+}
+
+```
+
+
+Next, plot the projection of each data point for $q=2$. In practice, examples need not be shown in the plot if the corresponding component model has negligible conditional probability of having generated them.
+
+```{r}
+t1 = t[, which(apply(R, 1, which.max) == 1)]
+M1 = t(W1) %*% W1 + sigma[1]*diag(q)
+x1 = solve(M1) %*% t(W1) %*% (t1-Mu[, 1])
+plot(t(x1), col = 'white', main = 'Projection on subspace 1')
+text(t(x1)[, 1], t(x1)[, 2], labels = which(apply(R, 1, which.max) == 1), cex = 0.75)
+
+## since the data No.8 is obviously a outlier of this cluster, we should remove it
+t2 = t[, which(apply(R, 1, which.max) == 2)]  
+M2 = t(W2) %*% W2 + sigma[2]*diag(q)
+x2 = solve(M2) %*% t(W2) %*% (t2-Mu[, 2])
+plot(t(x2[,-6]), col = 'white', main = 'Projection on subspace 2')
+text(t(x2)[,-6][, 1], t(x2)[,-6][, 2], labels = which(apply(R, 1, which.max) == 2)[-6], cex = 0.75)  
+
+t3 = t[, which(apply(R, 1, which.max) == 3)]  
+M3 = t(W3) %*% W3 + sigma[3]*diag(q)
+x3 = solve(M3) %*% t(W3) %*% (t3-Mu[, 3])
+plot(t(x3), col = 'white', main = 'Projection on subspace 3')
+text(t(x3)[, 1], t(x3)[, 2], labels = which(apply(R, 1, which.max) == 3), cex = 0.75)   
+  
+```
+
+
+## Example 3: Controlling the degree of freedom
+
+For a PPCA model, there are $dq+1-q(q-1)/2$ free parameters. This permits control of the model complexity through the choice of $q$. 
+
+```{r}
+num_para = function(data, q){
+  t = data
+  d = dim(t)[1]
+  num = d*q + 1 - q*(q-1)/2
+  
+  return(num)
+}
+```
+
+Moreover, we can evalute estimate the accuracy of the model using prediction error(in this case, the negative log-likelihood per example). It is calculated by bootstrap, which can be summarized as follows:
+
+Step 1: randomly select $N$ sample points from the data (since this is put back sampling, it will produce duplicate samples), and the newly generated $N$ sample points will be used as training data; the sample points not extracted from the original data will be used as test data (about 36.8% of the original data);
+
+Step 2: use training data to get the estimator, and bring the estimator into test data to calculate the negative log likelihood (prediction error);
+
+Step 3: repeat step 1 and step 2 for $m$ times, getting $m$ prediction errors;
+
+Step 4: calculate the average of $m$ prediction errors.
+
+The log-likelihood is computed as follows:
+\begin{equation}
+\mathbf{C}=\mathbf{WW}^{\rm{T}}+\sigma^2\mathbf{I}
+\end{equation}
+\begin{equation}
+\mathcal{L}=-\frac{N}{2}(\log|\mathbf{C}|+\rm{tr}(\mathbf{C}^{-1}\mathbf{S}))
+\end{equation}
+
+```{r}
+prediction_error = function(data, q, num_iter, f){
+## input: 
+## data: d*N data matrix
+## q: the dimension of the latent space
+## num_iter: number of the iteration
+## f: a function:Isotropic or Diagonal or PPCA_2
+## output:
+## error: the negative log likelihood
+  
+error_array = array(0, num_iter)
+  for(i in 1 : num_iter){
+    d = dim(data)[1]
+    N = dim(data)[2]
+    train_index = unique(sample(c(1:N), N, replace = TRUE))
+    test_index = c(1:N)[-unique(sample(c(1:N), N, replace = TRUE))]
+    train_data = data[, train_index]
+    test_data = data[, test_index]
+    
+    C = f(train_data, q)
+    n = dim(test_data)[2]
+    train_Mu = rowMeans(train_data)
+    S_test = matrix(0, d, d)
+    for(j in 1 : n){S_test = S_test + (test_data[, n]-train_Mu) %*% t((test_data[, n]-train_Mu))}
+    S_test = S_test / n
+    L_test = -n*(log(det(C))+sum(diag(Solve(C) %*% S_test)))/2
+    error_array[i] = -L_test / n
+  }
+  error = mean(error_array)
+  
+  return(error)
+}
+```
+
+To run the code above, we need to write a PPCA_2 function to return the parameter $\mathbf{C}$. Also, to make a contrast, the Isotropic model and the Diagonal model are written as functions returning to covariance matrix $\mathbf{C}$.
+
+PPCA_2 function:
+
+```{r}
+PPCA_2 = function(data, q){
+  
+  t = as.matrix(data)
+  d = dim(t)[1]
+  N = dim(t)[2]
+  Mu = rowMeans(t)
+
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + (t[, i] - Mu) %*% t(t[, i] - Mu)}
+  S = S / N
+
+  ev = eigen(S)
+  
+  if (q + 1 == d){sigma = sum(ev$values[d]) / (d - q)}
+  if (q + 1 < d){sigma = sum(ev$values[(q + 1) : d]) / (d - q)}
+
+  U = ev$vectors[, 1 : q]
+  if (q == 1){lambda = ev$values[1]}
+  if (q > 1){lambda = diag(ev$values[1 : q])}
+  W = U %*% sqrt(lambda - sigma * diag(q))
+  
+  C = W %*% t(W) + sigma*diag(d)
+  return(C)
+}  
+```
+
+Isotropic function:
+
+```{r}
+Isotropic = function(data, q){
+  t = as.matrix(data)
+  d = dim(t)[1]
+  N = dim(t)[2]
+  Mu = rowMeans(t)
+  
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + (t[, i] - Mu) %*% t(t[, i] - Mu)}
+  S = S / N
+  sigma = sum(diag(S)) / d
+  C = sigma * diag(d)
+  return(C)
+}
+```
+
+Diagonal function:
+
+```{r}
+Diagonal = function(data, q){
+  t = as.matrix(data)
+  d = dim(t)[1]
+  N = dim(t)[2]
+  Mu = rowMeans(t)
+  
+  S = matrix(data = 0, nrow = d, ncol = d)
+  for (i in 1 : N){S = S + (t[, i] - Mu) %*% t(t[, i] - Mu)}
+  S = S / N
+  
+  C = diag(diag(S))
+  return(C)
+}
+```
+
+Conduct the calculation for Isotropic model, Diagonal model and PPCA model for $q=1, 2, 3, 4, 17$:
+
+```{r}
+Isotropic_error=prediction_error(data, 0, 500, Isotropic)
+Diagonal_error=prediction_error(data, 0, 500, Diagonal)
+PPCA1_error=prediction_error(data, 1, 500, PPCA_2)
+PPCA2_error=prediction_error(data, 2, 500, PPCA_2)
+PPCA3_error=prediction_error(data, 3, 500, PPCA_2)
+PPCA4_error=prediction_error(data, 4, 500, PPCA_2)
+PPCA17_error=prediction_error(data, 17, 500, PPCA_2)
+```
+
+Conclude the result into a table:
+
+```{r}
+table = data.frame(
+  a = c('Isotropic', 'Diagonal', 'PPCA', '', '', '', 'Full'),
+  b = c(0, '(/)', 1, 2, 3, 4, '(17)'),
+  c = c(1, 18, 19, 36, 52, 67, 171),
+  d = c(Isotropic_error, Diagonal_error, PPCA1_error, PPCA2_error, PPCA3_error, 
+      PPCA4_error, PPCA17_error))
+names(table) = c('Covariance model', 'q(equivalent)', 'Number of parameters', 'Prediction error')
+
+library(knitr)
+knitr::kable(table, align = c('c', 'c', 'c', 'c'), caption = 'Complexity and bootstrap estimate
+of the prediction error for various Gaussian model of the Tobamovirus data')
+```
+
+
+## Some problems
+
+In PPCA model, if we use EM algorithm, the result is very sensitive to the initial value of parameters. $\mathbf{W}$ must be choosen in a small range at first to make the log-likelihood converge to the overall maximum.
+
+In example 1, the projection of Tobamovirus data, although also appears as three clusters, is different to the plot in the original paper[1]. But PPCA and PCA above get the same result. It is highly possible that the dataset is not the same as the one used by the author. There is a strong evidence to support: observations No.23 and No.24 are almost the same in 18-dimensional space, but on the plot of [1], they are very separate even in 2-dimensional space. The dataset utilized in this aritcle is obtained from the website: https://www.stats.ox.ac.uk/pub/PRNN/virus3.dat.
+
+In example 3, the model with smallest prediction error is PPCA and $q=3$ instead of $q=2$. There are also some differences in other computational results of prediction error compared to the original paper.
+
+
+## References
+
+[1] M. E. Tipping and C. M. Bishop, "Probabilistic Principal Component Analysis", in Journal of the Royal Statistical Society, Series B (Statistical Methodology), Vol. 61, No. 3(1999) , pp. 611-622, doi:10.1111/1467-9868.00196.
+
+[2] Ilin. A and Raiko. T, "Practical approaches to principal component analysis in the presence of missing values", in Journal of Machine Learning Research, Vol. 11(2010), pp. 1957-2000, doi:10.5555/1756006.1859917.
+
+[3] M. E. Tipping and C. M. Bishop, "Mixtures of Probabilistic Principal Component Analyzers", in Neural Computation, Vol. 11, No. 2(1999), pp. 443-482, doi:10.1162/089976699300016728.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
