@@ -1,7 +1,7 @@
 #Example about mixtures of PPCA models
 
 library('limSolve')
-path = "/code" 
+path = "/code_R" 
 setwd(path)  
 source('PPCA.R')
 source('PCA.R')
