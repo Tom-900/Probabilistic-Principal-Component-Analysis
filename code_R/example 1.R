@@ -1,12 +1,8 @@
 #Example: using tobamovirus data, and missing data experiment
 
 library('limSolve')
-path = "D:/statistics/CUHK_PPCA/code" 
-setwd(path)  
-source('PPCA.R')
-source('PCA.R')
 
-tobamovirus = read.csv('D:/statistics/CUHK_PPCA/data/tobamovirus.csv')
+tobamovirus = read.csv('/data/tobamovirus.csv')
 data = t(as.matrix(tobamovirus))
 
 pca_data = t(PCA(data, 2))
