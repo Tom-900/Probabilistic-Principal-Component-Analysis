@@ -1,7 +1,4 @@
-#Example using general data a
-path = "D:/statistics/CUHK_PPCA/code" 
-setwd(path)  
-source('PPCA.R')
+#Example using general data
 
 a = matrix(rnorm(120), nrow = 6, ncol = 20)
 b = PPCA(a, q = 3)
