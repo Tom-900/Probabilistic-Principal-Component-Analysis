@@ -5,7 +5,7 @@ In this project, PPCA are realized through both python and R. Meanwhile, there a
 
 In addition, some examples including mixture PPCA and PPCA with missing data are also realized. These can be found in PPCA.Rmd.
 
-For more details, please refer to the paper below:
+For more details, please refer to the papers below:
 
 [1] M. E. Tipping and C. M. Bishop, “Probabilistic Principal Component Analysis”, in Journal of the Royal Statistical Society, Series B (Statistical Methodology), Vol. 61, No. 3(1999) , pp. 611-622, doi:10.1111/1467-9868.00196.
 
