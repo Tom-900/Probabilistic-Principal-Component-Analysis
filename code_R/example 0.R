@@ -1,4 +1,8 @@
 #Example using general data
+path = "/code_R" 
+setwd(path)  
+source('PPCA.R')
+source('PCA.R')
 
 a = matrix(rnorm(120), nrow = 6, ncol = 20)
 b = PPCA(a, q = 3)
