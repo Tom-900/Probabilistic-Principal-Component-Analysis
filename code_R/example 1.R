@@ -1,6 +1,10 @@
 #Example: using tobamovirus data, and missing data experiment
 
 library('limSolve')
+path = "/code_R" 
+setwd(path)  
+source('PPCA.R')
+source('PCA.R')
 
 tobamovirus = read.csv('/data/tobamovirus.csv')
 data = t(as.matrix(tobamovirus))
