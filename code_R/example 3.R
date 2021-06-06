@@ -1,7 +1,7 @@
 #Example about controling the degrees of freedom
 
 library('limSolve')
-path = "D:/statistics/CUHK_PPCA/code" 
+path = "/code_R" 
 setwd(path)  
 source('PPCA.R')
 source('PCA.R')
