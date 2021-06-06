@@ -5,7 +5,7 @@ from PCA import PCA
 from PPCA import PPCA
 
 
-tobamovirus = pd.read_csv('D:/statistics/CUHK_PPCA/data/tobamovirus.csv')
+tobamovirus = pd.read_csv('/data/tobamovirus.csv')
 data = np.array(tobamovirus, dtype=float).T
 
 pca_data = PCA(data, 2)
